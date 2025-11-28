@@ -73,7 +73,7 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
         print_substep("Launching Headless Browser...")
 
         browser = p.chromium.launch(
-            headless=True
+            headless=False
         )  # headless=False will show the browser for debugging purposes
         # Device scale factor (or dsf for short) allows us to increase the resolution of the screenshots
         # When the dsf is 1, the width of the screenshot is 600 pixels
@@ -169,18 +169,35 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
 
         postcontentpath = f"assets/temp/{reddit_id}/png/title.png"
         try:
+            # Try to wait for the element first to ensure it's loaded
+            try:
+                page.wait_for_selector('[data-test-id="post-content"]', timeout=10000)
+                selector = '[data-test-id="post-content"]'
+            except:
+                # Fallback: try shreddit-post which is used in newer Reddit UIs
+                try:
+                    page.wait_for_selector('shreddit-post', timeout=5000)
+                    selector = 'shreddit-post'
+                except:
+                    # Fallback 2: generic post container
+                    print("Could not find standard selectors, dumping page source for debug...")
+                    with open(f"assets/temp/{reddit_id}/debug_page.html", "w", encoding="utf-8") as f:
+                        f.write(page.content())
+                    page.screenshot(path=f"assets/temp/{reddit_id}/debug_screenshot.png")
+                    raise Exception("Could not find post content element")
+
             if settings.config["settings"]["zoom"] != 1:
                 # store zoom settings
                 zoom = settings.config["settings"]["zoom"]
                 # zoom the body of the page
                 page.evaluate("document.body.style.zoom=" + str(zoom))
                 # as zooming the body doesn't change the properties of the divs, we need to adjust for the zoom
-                location = page.locator('[data-test-id="post-content"]').bounding_box()
+                location = page.locator(selector).bounding_box()
                 for i in location:
                     location[i] = float("{:.2f}".format(location[i] * zoom))
                 page.screenshot(clip=location, path=postcontentpath)
             else:
-                page.locator('[data-test-id="post-content"]').screenshot(path=postcontentpath)
+                page.locator(selector).screenshot(path=postcontentpath)
         except Exception as e:
             print_substep("Something went wrong!", style="red")
             resp = input(
@@ -219,6 +236,8 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
                     page.locator('[data-testid="content-gate"] button').click()
 
                 page.goto(f"https://new.reddit.com/{comment['comment_url']}")
+                import time
+                time.sleep(3)
 
                 # translate code
 
@@ -233,15 +252,48 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
                         [comment_tl, comment["comment_id"]],
                     )
                 try:
+                    selector = f"#t1_{comment['comment_id']}"
+                    found = False
+                    try:
+                        # Try default selector
+                        page.wait_for_selector(selector, timeout=3000)
+                        found = True
+                    except:
+                        # Fallback for new shreddit UI
+                        selector = f"shreddit-comment[thingid='t1_{comment['comment_id']}'], shreddit-comment[thing-id='t1_{comment['comment_id']}']"
+                        try:
+                            page.wait_for_selector(selector, timeout=3000)
+                            found = True
+                        except:
+                            # Try generic ID
+                            selector = f"[id='t1_{comment['comment_id']}']"
+                            try:
+                                page.wait_for_selector(selector, timeout=3000)
+                                found = True
+                            except:
+                                print(f"Could not find comment {comment['comment_id']}")
+                                # Dump page source for debugging
+                                try:
+                                    with open(f"assets/temp/{reddit_id}/debug_failed_comment_{comment['comment_id']}.html", "w", encoding="utf-8") as f:
+                                        f.write(page.content())
+                                    page.screenshot(path=f"assets/temp/{reddit_id}/debug_failed_comment_{comment['comment_id']}.png", full_page=True)
+                                    print(f"Dumped debug info to assets/temp/{reddit_id}/")
+                                except Exception as e:
+                                    print(f"Failed to dump debug info: {e}")
+                                continue
+                    
+                    if not found:
+                        continue
+
                     if settings.config["settings"]["zoom"] != 1:
                         # store zoom settings
                         zoom = settings.config["settings"]["zoom"]
                         # zoom the body of the page
                         page.evaluate("document.body.style.zoom=" + str(zoom))
                         # scroll comment into view
-                        page.locator(f"#t1_{comment['comment_id']}").scroll_into_view_if_needed()
+                        page.locator(selector).scroll_into_view_if_needed()
                         # as zooming the body doesn't change the properties of the divs, we need to adjust for the zoom
-                        location = page.locator(f"#t1_{comment['comment_id']}").bounding_box()
+                        location = page.locator(selector).bounding_box()
                         for i in location:
                             location[i] = float("{:.2f}".format(location[i] * zoom))
                         page.screenshot(
@@ -249,13 +301,15 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
                             path=f"assets/temp/{reddit_id}/png/comment_{idx}.png",
                         )
                     else:
-                        page.locator(f"#t1_{comment['comment_id']}").screenshot(
+                        page.locator(selector).scroll_into_view_if_needed()
+                        page.locator(selector).screenshot(
                             path=f"assets/temp/{reddit_id}/png/comment_{idx}.png"
                         )
-                except TimeoutError:
-                    del reddit_object["comments"]
-                    screenshot_num += 1
-                    print("TimeoutError: Skipping screenshot...")
+                except Exception as e:
+                    print(f"Error taking screenshot for comment {comment['comment_id']}: {e}")
+                    # del reddit_object["comments"] # Don't delete during iteration
+                    # screenshot_num += 1
+                    print("Skipping screenshot...")
                     continue
 
         # close browser instance when we are done using it

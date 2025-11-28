@@ -93,7 +93,7 @@ def prepare_background(reddit_id: str, W: int, H: int) -> str:
             output_path,
             an=None,
             **{
-                "c:v": "h264_nvenc",
+                "c:v": "libx264",
                 "b:v": "20M",
                 "b:a": "192k",
                 "threads": multiprocessing.cpu_count(),
@@ -337,22 +337,29 @@ def make_final_video(
                 current_time += audio_clips_durations[i]
     else:
         for i in range(0, number_of_clips + 1):
-            image_clips.append(
-                ffmpeg.input(f"assets/temp/{reddit_id}/png/comment_{i}.png")["v"].filter(
-                    "scale", screenshot_width, -1
+            duration = audio_clips_durations[i]
+            image_overlay = None
+            
+            if i == 0:
+                image_overlay = image_clips[0]
+            else:
+                img_path = f"assets/temp/{reddit_id}/png/comment_{i-1}.png"
+                if os.path.exists(img_path):
+                    image_clips.append(
+                        ffmpeg.input(img_path)["v"].filter(
+                            "scale", screenshot_width, -1
+                        )
+                    )
+                    image_overlay = image_clips[-1].filter("colorchannelmixer", aa=opacity)
+
+            if image_overlay:
+                background_clip = background_clip.overlay(
+                    image_overlay,
+                    enable=f"between(t,{current_time},{current_time + duration})",
+                    x="(main_w-overlay_w)/2",
+                    y="(main_h-overlay_h)/2",
                 )
-            )
-            image_overlay = image_clips[i].filter("colorchannelmixer", aa=opacity)
-            assert (
-                audio_clips_durations is not None
-            ), "Please make a GitHub issue if you see this. Ping @JasonLovesDoggo on GitHub."
-            background_clip = background_clip.overlay(
-                image_overlay,
-                enable=f"between(t,{current_time},{current_time + audio_clips_durations[i]})",
-                x="(main_w-overlay_w)/2",
-                y="(main_h-overlay_h)/2",
-            )
-            current_time += audio_clips_durations[i]
+            current_time += duration
 
     title = extract_id(reddit_obj, "thread_title")
     idx = extract_id(reddit_obj)
@@ -438,7 +445,7 @@ def make_final_video(
                 path,
                 f="mp4",
                 **{
-                    "c:v": "h264_nvenc",
+                    "c:v": "libx264",
                     "b:v": "20M",
                     "b:a": "192k",
                     "threads": multiprocessing.cpu_count(),
@@ -468,7 +475,7 @@ def make_final_video(
                     path,
                     f="mp4",
                     **{
-                        "c:v": "h264_nvenc",
+                        "c:v": "libx264",
                         "b:v": "20M",
                         "b:a": "192k",
                         "threads": multiprocessing.cpu_count(),

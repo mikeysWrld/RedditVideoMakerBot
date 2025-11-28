@@ -83,9 +83,13 @@ def shutdown() -> NoReturn:
 
 
 if __name__ == "__main__":
-    if sys.version_info.major != 3 or sys.version_info.minor not in [10, 11, 12]:
+    supported_minors = [10, 11, 12, 13]
+    if sys.version_info.major != 3 or sys.version_info.minor not in supported_minors:
+        versions = ", ".join(f"3.{minor}" for minor in supported_minors)
         print(
-            "Hey! Congratulations, you've made it so far (which is pretty rare with no Python 3.10). Unfortunately, this program only works on Python 3.10. Please install Python 3.10 and try again."
+            f"Hey! Congratulations, you've made it so far (which is pretty rare with no supported Python version). "
+            f"Unfortunately, this program currently supports Python {versions}. "
+            "Please install one of those versions and try again."
         )
         sys.exit()
     ffmpeg_install()

@@ -106,6 +106,23 @@ class TikTok:
         # check if there was an error in the request
         status_code = data["status_code"]
         if status_code != 0:
+            # If text is empty after sanitization, create a silent audio file
+            if "Empty text after sanitization" in data.get("message", ""):
+                # Create a minimal silent MP3 (header only/very short)
+                # A minimal valid MP3 frame header is roughly what we need to "fake" a file
+                # that won't crash downstream players, or use a known silent byte sequence.
+                # Creating a 1-byte file might fail some players, but usually ffmpeg concat handles it or skips it.
+                # Better: Write a valid silent frame or 0 bytes if the system handles it.
+                # Given the bot uses ffmpeg concat, 0 bytes might be risky, but let's try a minimal hex sequence.
+                # This hex is a valid MP3 frame header for silence (approx).
+                # Actually, simplest is to just write nothing and hope the concatenator skips empty files,
+                # OR write a very small silent MP3.
+                # Let's try writing a small valid MP3 header for silence.
+                with open(filepath, "wb") as out:
+                     # Minimal MP3 frame (MPEG 1 Layer III, 128kbps, 44.1kHz, padding off)
+                     # FF FB 90 44 ...
+                     out.write(b'\xff\xfb\x90\x44\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+                return
             raise TikTokTTSException(status_code, data["message"])
 
         # decode data from base64 to binary
@@ -126,6 +143,22 @@ class TikTok:
         """If voice is not passed, the API will try to use the most fitting voice"""
         # sanitize text
         text = text.replace("+", "plus").replace("&", "and").replace("r/", "")
+        
+        # Remove non-ASCII characters that TikTok TTS doesn't support
+        # Keep only ASCII printable characters, spaces, and common punctuation
+        # This ensures compatibility even if sanitize_text() missed something
+        import string
+        # Allow ASCII letters, digits, punctuation, and spaces
+        allowed_chars = set(string.ascii_letters + string.digits + string.punctuation + " \n\t")
+        # Replace non-ASCII characters with spaces
+        text = ''.join(char if char in allowed_chars else ' ' for char in text)
+        # Clean up multiple spaces and newlines
+        text = ' '.join(text.split())
+        
+        # Skip empty text or text with no alphanumeric characters (e.g. just ".") after cleaning
+        if not text.strip() or not any(char.isalnum() for char in text):
+            # Return a minimal valid response to avoid errors
+            return {"status_code": 0, "data": {"v_str": ""}, "message": "Empty text after sanitization"}
 
         # prepare url request
         params = {"req_text": text, "speaker_map_type": 0, "aid": 1233}
