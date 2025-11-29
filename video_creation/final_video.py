@@ -192,7 +192,8 @@ def merge_background_audio(audio: ffmpeg, reddit_id: str):
             background_audio_volume,
         )
         # Merges audio and background_audio
-        merged_audio = ffmpeg.filter([audio, bg_audio], "amix", duration="longest")
+        # Use duration='first' to ensure audio ends when the main content (first input) ends
+        merged_audio = ffmpeg.filter([audio, bg_audio], "amix", duration="first")
         return merged_audio  # Return merged audio
 
 
@@ -267,7 +268,14 @@ def make_final_video(
 
     screenshot_width = int((W * 45) // 100)
     audio = ffmpeg.input(f"assets/temp/{reddit_id}/audio.mp3")
+    
+    # Calculate exact total duration
+    total_duration = sum(audio_clips_durations)
+    
     final_audio = merge_background_audio(audio, reddit_id)
+    
+    # Trim background video to match exact audio duration
+    background_clip = background_clip.filter("trim", duration=total_duration)
 
     image_clips = list()
 

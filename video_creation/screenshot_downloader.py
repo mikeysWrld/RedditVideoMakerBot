@@ -189,13 +189,43 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
             if settings.config["settings"]["zoom"] != 1:
                 # store zoom settings
                 zoom = settings.config["settings"]["zoom"]
-                # zoom the body of the page
-                page.evaluate("document.body.style.zoom=" + str(zoom))
-                # as zooming the body doesn't change the properties of the divs, we need to adjust for the zoom
-                location = page.locator(selector).bounding_box()
-                for i in location:
-                    location[i] = float("{:.2f}".format(location[i] * zoom))
-                page.screenshot(clip=location, path=postcontentpath)
+                
+                # Hide sidebar and other distracting elements
+                page.evaluate("""
+                    // Hide sidebar
+                    const sidebar = document.querySelector('[data-testid="frontpage-sidebar"]');
+                    if (sidebar) sidebar.style.display = 'none';
+                    
+                    // Hide right sidebar content
+                    const rightSidebar = document.querySelector('.side');
+                    if (rightSidebar) rightSidebar.style.display = 'none';
+                    
+                    // Hide any other sidebars
+                    document.querySelectorAll('[data-testid*="sidebar"]').forEach(el => el.style.display = 'none');
+                """)
+                
+                # Apply transform scale to just the post element instead of page zoom
+                page.evaluate(f"""(selector) => {{
+                    const element = document.querySelector(selector);
+                    if (element) {{
+                        element.style.transform = 'scale({zoom})';
+                        element.style.transformOrigin = 'top left';
+                    }}
+                }}""", selector)
+                
+                page.wait_for_timeout(300)
+                
+                # Take element screenshot (captures only the element, not surroundings)
+                page.locator(selector).screenshot(path=postcontentpath)
+                
+                # Reset the transform
+                page.evaluate(f"""(selector) => {{
+                    const element = document.querySelector(selector);
+                    if (element) {{
+                        element.style.transform = '';
+                        element.style.transformOrigin = '';
+                    }}
+                }}""", selector)
             else:
                 page.locator(selector).screenshot(path=postcontentpath)
         except Exception as e:
@@ -288,18 +318,68 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
                     if settings.config["settings"]["zoom"] != 1:
                         # store zoom settings
                         zoom = settings.config["settings"]["zoom"]
-                        # zoom the body of the page
-                        page.evaluate("document.body.style.zoom=" + str(zoom))
-                        # scroll comment into view
+                        
+                        # Hide sidebar and other distracting elements
+                        page.evaluate("""(selector) => {
+                            // Hide sidebar
+                            const sidebar = document.querySelector('[data-testid="frontpage-sidebar"]');
+                            if (sidebar) sidebar.style.display = 'none';
+                            
+                            // Hide right sidebar content
+                            const rightSidebar = document.querySelector('.side');
+                            if (rightSidebar) rightSidebar.style.display = 'none';
+                            
+                            // Hide any other sidebars
+                            document.querySelectorAll('[data-testid*="sidebar"]').forEach(el => el.style.display = 'none');
+                            
+                            // Hide trending/popular sections
+                            document.querySelectorAll('[data-testid="popular-communities-leaderboard"]').forEach(el => el.style.display = 'none');
+
+                            // Hide replies (nested comments) to respect max_comment_length concept
+                            // We only want the main comment, not the conversation tree below it
+                            const comment = document.querySelector(selector);
+                            if (comment) {
+                                // Safe reply hiding strategy:
+                                
+                                // 1. Shreddit (Newer UI): Replies are in slot="children"
+                                const slotChildren = comment.querySelector('[slot="children"]');
+                                if (slotChildren) slotChildren.style.display = 'none';
+                                
+                                // 2. Shreddit tree
+                                const shredditTree = comment.querySelector('shreddit-comment-tree');
+                                if (shredditTree) shredditTree.style.display = 'none';
+                                
+                                // 3. Standard UI: Replies are often in a specific container
+                                const replies = comment.querySelector('[data-testid="replies-listing"]');
+                                if (replies) replies.style.display = 'none';
+                                
+                                // 4. Sibling strategy: If we can find the main content container, hide following siblings
+                                // The main content is usually in [data-testid="comment"]
+                                const content = comment.querySelector('[data-testid="comment"]');
+                                if (content) {
+                                    // In some layouts, replies are siblings to the content div
+                                    let next = content.nextElementSibling;
+                                    while (next) {
+                                        next.style.display = 'none';
+                                        next = next.nextElementSibling;
+                                    }
+                                }
+                            }
+                        }""", selector)
+                        
+                        # Use document body zoom for text scaling (causes reflow)
+                        page.evaluate(f"document.body.style.zoom = '{zoom}'")
+                        
                         page.locator(selector).scroll_into_view_if_needed()
-                        # as zooming the body doesn't change the properties of the divs, we need to adjust for the zoom
-                        location = page.locator(selector).bounding_box()
-                        for i in location:
-                            location[i] = float("{:.2f}".format(location[i] * zoom))
-                        page.screenshot(
-                            clip=location,
+                        page.wait_for_timeout(500)
+                        
+                        # Take element screenshot
+                        page.locator(selector).screenshot(
                             path=f"assets/temp/{reddit_id}/png/comment_{idx}.png",
                         )
+                        
+                        # Reset zoom
+                        page.evaluate("document.body.style.zoom = '1'")
                     else:
                         page.locator(selector).scroll_into_view_if_needed()
                         page.locator(selector).screenshot(
