@@ -1,9 +1,10 @@
 import json
+import os
 import random
 import re
 from pathlib import Path
 from random import randrange
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import yt_dlp
 from moviepy import AudioFileClip, VideoFileClip
@@ -11,6 +12,34 @@ from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
 
 from utils import settings
 from utils.console import print_step, print_substep
+
+
+def get_subreddit_audio_path(subreddit: str) -> Optional[str]:
+    """Check if there's a custom background audio for the given subreddit.
+    
+    Args:
+        subreddit: The subreddit name (e.g., 'nbadiscussion')
+    
+    Returns:
+        Path to the audio file if found, None otherwise
+    """
+    # Normalize the subreddit name (lowercase, no r/ prefix)
+    subreddit_key = subreddit.lower().replace("r/", "").replace("/", "")
+    
+    # Check for subreddit-specific audio folder
+    audio_folder = Path(f"./assets/backgrounds/audio/subreddits/{subreddit_key}")
+    audio_file = audio_folder / "background.mp3"
+    
+    if audio_file.is_file():
+        return str(audio_file)
+    
+    # Also check for common variations
+    for ext in [".mp3", ".wav", ".m4a", ".ogg"]:
+        alt_file = audio_folder / f"background{ext}"
+        if alt_file.is_file():
+            return str(alt_file)
+    
+    return None
 
 
 def load_background_options():
@@ -134,8 +163,20 @@ def chop_background(background_config: Dict[str, Tuple], video_length: int, redd
         print_step("Volume was set to 0. Skipping background audio creation . . .")
     else:
         print_step("Finding a spot in the backgrounds audio to chop...✂️")
-        audio_choice = f"{background_config['audio'][2]}-{background_config['audio'][1]}"
-        background_audio = AudioFileClip(f"assets/backgrounds/audio/{audio_choice}")
+        
+        # Check for subreddit-specific audio first
+        current_subreddit = settings.config["reddit"]["thread"]["subreddit"]
+        custom_audio_path = get_subreddit_audio_path(current_subreddit)
+        
+        if custom_audio_path:
+            print_substep(f"🎵 Using custom audio for r/{current_subreddit}", style="bold magenta")
+            background_audio = AudioFileClip(custom_audio_path)
+        else:
+            # Fall back to default audio from config
+            audio_choice = f"{background_config['audio'][2]}-{background_config['audio'][1]}"
+            print_substep(f"🎵 Using default audio: {audio_choice}", style="blue")
+            background_audio = AudioFileClip(f"assets/backgrounds/audio/{audio_choice}")
+        
         start_time_audio, end_time_audio = get_start_and_end_times(
             video_length, background_audio.duration
         )

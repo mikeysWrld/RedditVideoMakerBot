@@ -246,3 +246,8 @@ video_creation/data/envvars.txt
 
 config.toml
 *.exe
+
+# OAuth credentials (sensitive)
+credentials/
+*_token.json
+client_secrets.json

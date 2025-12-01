@@ -73,7 +73,7 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
         print_substep("Launching Headless Browser...")
 
         browser = p.chromium.launch(
-            headless=False
+            headless=True
         )  # headless=False will show the browser for debugging purposes
         # Device scale factor (or dsf for short) allows us to increase the resolution of the screenshots
         # When the dsf is 1, the width of the screenshot is 600 pixels

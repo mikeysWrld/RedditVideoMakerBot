@@ -202,7 +202,7 @@ def make_final_video(
     length: int,
     reddit_obj: dict,
     background_config: Dict[str, Tuple],
-):
+) -> str:
     """Gathers audio clips, gathers all screenshots, stitches them together and saves the final video to assets/temp
     Args:
         number_of_clips (int): Index to end at when going through the screenshots'
@@ -506,3 +506,6 @@ def make_final_video(
     cleanups = cleanup(reddit_id)
     print_substep(f"Removed {cleanups} temporary files 🗑")
     print_step("Done! 🎉 The video is in the results folder 📁")
+    
+    # Return the video path for social media upload
+    return path
